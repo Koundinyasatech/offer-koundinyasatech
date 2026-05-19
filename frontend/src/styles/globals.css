@@ -1,0 +1,54 @@
+/* ── Reset ──────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  color: #1A1A2E;
+  background: #1e4a5f;
+  min-height: 100vh;
+  margin: 0; 
+  padding: 0;
+  width: 100%;
+  height:100%;
+}
+
+#root {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  border-inline: none !important;
+  text-align: left;
+}
+
+/* ── Background gradient ────────────────────────────────────────────────────── */
+.bg-gradient {
+  min-height: 100vh;
+
+  background: linear-gradient(135deg, #1e4a5f 0%, #153347 50%, #0d2535 100%);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Spinner ────────────────────────────────────────────────────────────────── */
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #2196f3;
+  border-radius: 50%;
+  display: inline-block;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f0f4f8; }
+::-webkit-scrollbar-thumb { background: #b0c4d8; border-radius: 3px; }
+
+/* ── Table responsive wrapper ───────────────────────────────────────────────── */
+.table-responsive { overflow-x: auto; width: 100%; }
