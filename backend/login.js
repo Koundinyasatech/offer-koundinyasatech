@@ -42,6 +42,7 @@ app.use(express.json());
 mongoose.connect(process.env.MONGO_URI)
 .then(() => {
     console.log("MongoDB Connected");
+    console.log("Database name:", mongoose.connection.db.databaseName);
 })
 .catch((err) => {
     console.log(err);
