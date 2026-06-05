@@ -46,9 +46,38 @@ body {
 }
 
 /* ── Scrollbar ──────────────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: #f0f4f8; }
-::-webkit-scrollbar-thumb { background: #b0c4d8; border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: #b0c4d8; border-radius: 3px; } */
+
+
+
+
 
 /* ── Table responsive wrapper ───────────────────────────────────────────────── */
 .table-responsive { overflow-x: auto; width: 100%; }
+
+
+
+
+/* Calendar icon styling */
+.date-input-responsive::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .date-input-responsive {
+    max-width: 100%;
+    font-size: 16px; /* Prevents zoom on iOS */
+    padding: 12px 10px;
+  }
+}
+
+/* Dark mode support (optional) */
+@media (prefers-color-scheme: dark) {
+  .date-input-responsive::-webkit-calendar-picker-indicator {
+    filter: invert(0);
+  }
+}

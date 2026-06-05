@@ -9,6 +9,8 @@ const EmployeeSchema = new mongoose.Schema({
     Mobileno: String,
     Email: String,
     code: String,
+    DOJ: String,
+    DOE: String,
     Createduserid: Number,
     Createddatetime: String,
     IsActive: Boolean

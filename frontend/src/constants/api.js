@@ -1,6 +1,6 @@
 
-// export const BASE_URL = 'https://offer-koundinyasatech-1.onrender.com/api'
-export const BASE_URL = 'http://localhost:5000/api'
+export const BASE_URL = 'https://offer-koundinyasatech-1.onrender.com/api'
+// export const BASE_URL = 'http://localhost:5000/api'
 
 export const API_ENDPOINTS = {
   // Auth

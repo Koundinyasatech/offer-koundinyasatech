@@ -5,7 +5,6 @@ export const authService = {
   login: async (Userid, code) => {
     try{
       const res = await apiClient.post(API_ENDPOINTS.LOGIN, { Userid, code })
-      console.log(res.data)
       const { token, user } = res.data
       localStorage.setItem('authToken', token)
       localStorage.setItem('userData', JSON.stringify(user))

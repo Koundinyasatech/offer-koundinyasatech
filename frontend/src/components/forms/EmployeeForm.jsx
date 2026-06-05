@@ -11,16 +11,18 @@ const EmployeeForm = ({ initial = null, onSuccess }) => {
   const isEdit = !!initial;
 
   const [form, setForm] = useState({
-    empId:       initial?.empId       || '',
-    name:        initial?.name        || '',
+    empId: initial?.empId || '',
+    name: initial?.name || '',
     designation: initial?.designation || '',
-    code:        initial?.code        || '',
-    mobile:      initial?.mobile      || '',
-    email:       initial?.email       || '',
-    isActive:    initial ? initial.status === 'Active' : true,
+    code: initial?.code || '',
+    mobile: initial?.mobile || '',
+    email: initial?.email || '',
+    DOJ: initial?.DOJ || '',
+    DOE: initial?.DOE || '',
+    isActive: initial ? initial.status === 'Active' : true,
   });
-  const [errors,   setErrors]   = useState({});
-  const [loading,  setLoading]  = useState(false);
+  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
   const [genLoading, setGenLoading] = useState(false);
 
   const set = (field, value) => {
@@ -92,6 +94,18 @@ const EmployeeForm = ({ initial = null, onSuccess }) => {
           error={errors.mobile} placeholder="" type="tel" />
         <AppInput label="Email" value={form.email} onChange={e => set('email', e.target.value)}
           error={errors.email} placeholder="" type="email" />
+        <AppInput
+          label="DOJ"
+          value={form.DOJ}
+          onChange={e => set('DOJ', e.target.value)}
+          type="date"
+        />
+        <AppInput
+          label="DOE"
+          value={form.DOE}
+          onChange={e => set('DOE', e.target.value)}
+          type="date"
+        />
         {/* Active checkbox */}
         <div style={{ marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <label style={{ fontSize: '14px', fontWeight: '500', color: '#1A1A2E' }}>Active</label>
