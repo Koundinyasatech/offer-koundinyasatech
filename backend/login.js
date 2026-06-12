@@ -315,36 +315,6 @@ app.get("/api/employees/:id", async (req, res) => {
    FILES
 ═══════════════════════════════════════════════════════════ */
 
-/* ── Upload file ── */
-// app.post("/api/files/upload", upload.single("file"), async (req, res) => {
-//   console.log("Upload file API called.");
-//   const generatedfilename =
-//     Date.now() + "_" + Math.round(Math.random() * 1000000) + path.extname(req.file.originalname);
-
-//   try {
-//     const pdfPath  = req.file.path;
-//     const pdfBytes = fs.readFileSync(pdfPath);
-
-//     const employeeFile = new EmployeeFiles({
-//       Empid:           req.body.employeeId,
-//       ActualfileName:  req.file.originalname,
-//       FileName:        generatedfilename,
-//       filepath:        req.file.path,
-//       ContentType:     req.file.mimetype,
-//       Data:            pdfBytes,
-//       CreatedUserId:   req.Userid,
-//       CreatedDatetime: new Date(),
-//       Islatest:        true,
-//     });
-
-//     await employeeFile.save();
-//     res.status(200).json({ message: "Data Saved Successfully" });
-//   } catch (err) {
-//     console.log(err);
-//     res.status(500).json({ message: err.message });
-//   }
-// });
-
 
 
 app.post("/api/files/upload", upload.single("file"), async (req, res) => {
@@ -356,25 +326,30 @@ app.post("/api/files/upload", upload.single("file"), async (req, res) => {
     const pdfPath  = req.file.path;
     const pdfBytes = fs.readFileSync(pdfPath);
 
-    await EmployeeFiles.findOneAndUpdate(
-      { Empid: req.body.employeeId },           // find by employee ID
-      {
-        $set: {
-          ActualfileName:  req.file.originalname,
-          FileName:        generatedfilename,
-          filepath:        req.file.path,
-          ContentType:     req.file.mimetype,
-          Data:            pdfBytes,
-          CreatedDatetime: new Date(),
-          Islatest:        true,
-        }
-      },
-      { upsert: true, new: true }               // create if not exists, replace if exists
+    // ✅ Mark all previous files as not latest
+    await EmployeeFiles.updateMany(
+      { Empid: req.body.employeeId },
+      { $set: { Islatest: false } }
     );
 
-    fs.unlinkSync(pdfPath);                     // clean up temp file
+    // ✅ Always insert new record — never replace
+    const employeeFile = new EmployeeFiles({
+      Empid:           req.body.employeeId,
+      ActualfileName:  req.file.originalname,
+      FileName:        generatedfilename,
+      filepath:        req.file.path,
+      ContentType:     req.file.mimetype,
+      Data:            pdfBytes,
+      CreatedUserId:   req.Userid,
+      CreatedDatetime: new Date(),
+      Islatest:        true,   // ← new file is always the latest
+    });
 
-    res.status(200).json({ message: "File saved successfully" });
+    await employeeFile.save();
+
+    fs.unlinkSync(pdfPath); // clean up temp file
+
+    res.status(200).json({ message: "File uploaded successfully" });
   } catch (err) {
     console.log(err);
     res.status(500).json({ message: err.message });
@@ -382,13 +357,55 @@ app.post("/api/files/upload", upload.single("file"), async (req, res) => {
 });
 
 /* ── View PDF inline ── */
+// ── Get all file metadata for an employee (for listing)
+app.get("/api/viewpdf/list/:id", async (req, res) => {
+  try {
+    const files = await EmployeeFiles.find(
+      { Empid: req.params.id },
+      { Data: 0 }  // exclude binary data — just return metadata
+    ).sort({ CreatedDatetime: -1 }); // newest first
+
+    if (!files.length) return res.status(404).json({ message: "No files found" });
+
+    const mapped = files.map(f => ({
+      id:            f._id,
+      ActualfileName: f.ActualfileName,
+      FileName:      f.FileName,
+      ContentType:   f.ContentType,
+      CreatedDatetime: f.CreatedDatetime,
+      Islatest:      f.Islatest,
+    }));
+
+    res.json(mapped);
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ── View a specific file by MongoDB _id
 app.get("/api/viewpdf/:id", async (req, res) => {
   try {
-    const file = await EmployeeFiles.findOne({ Empid: req.params.id });
+    // Try to find by MongoDB _id first (specific file)
+    // Fallback to Empid + Islatest for backward compatibility
+    let file;
+
+    const isMongoId = req.params.id.match(/^[a-f\d]{24}$/i);
+
+    if (isMongoId) {
+      // ✅ View specific file by _id
+      file = await EmployeeFiles.findById(req.params.id);
+    } else {
+      // ✅ Fallback — view latest file by Empid
+      file = await EmployeeFiles.findOne(
+        { Empid: req.params.id, Islatest: true }
+      );
+    }
+
     if (!file) return res.status(404).json({ message: "File not found" });
 
     res.setHeader("Content-Type", file.ContentType || "application/pdf");
-    res.setHeader("Content-Disposition", `inline; filename="${file.FileName || "document.pdf"}"`);
+    res.setHeader("Content-Disposition", `inline; filename="${file.ActualfileName || file.FileName || "document.pdf"}"`);
 
     const data = file.Data?.buffer
       ? Buffer.from(file.Data.buffer)
@@ -404,21 +421,37 @@ app.get("/api/viewpdf/:id", async (req, res) => {
 /* ── Download file ── */
 app.get("/api/files/download/:id", async (req, res) => {
   try {
-    const file = await EmployeeFiles.findOne({ Empid: req.params.id });
+    let file;
+
+    const isMongoId = req.params.id.match(/^[a-f\d]{24}$/i);
+
+    if (isMongoId) {
+      // ✅ Download specific file by MongoDB _id
+      file = await EmployeeFiles.findById(req.params.id);
+    } else {
+      // ✅ Fallback — download latest file by Empid
+      file = await EmployeeFiles.findOne(
+        { Empid: req.params.id, Islatest: true }
+      );
+    }
+
     if (!file) return res.status(404).json({ message: "File not found" });
 
     res.set({
       "Content-Type":        file.ContentType,
-      "Content-Disposition": `attachment; filename="${file.FileName}"`,
+      "Content-Disposition": `attachment; filename="${file.ActualfileName || file.FileName}"`,
     });
 
-    res.end(file.Data);
+    const data = file.Data?.buffer
+      ? Buffer.from(file.Data.buffer)
+      : file.Data;
+
+    res.end(data);
   } catch (err) {
     console.log(err);
     res.status(500).json({ message: err.message });
   }
 });
-
 /* ═══════════════════════════════════════════════════════════
    START SERVER
 ═══════════════════════════════════════════════════════════ */
