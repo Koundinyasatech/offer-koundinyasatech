@@ -43,6 +43,7 @@ const FileListModal = ({ employee, onClose, isMobile }) => {
   const [loadingList, setLoadingList] = useState(true);
   const [viewing, setViewing] = useState(null);
   const [downloading, setDownloading] = useState(null);
+  const [deleting, setDeleting] = useState(null);
 
   useEffect(() => {
     if (!employee) return;
@@ -68,6 +69,19 @@ const FileListModal = ({ employee, onClose, isMobile }) => {
       toast.success('Download started');
     } catch { toast.error('Download failed'); }
     finally { setDownloading(null); }
+  };
+  const handleDelete = async (file) => {
+    if (!window.confirm(`Delete "${file.ActualfileName}"? This cannot be undone.`)) return;
+    setDeleting(file.id);
+    try {
+      await fileService.deleteFile(file.id);
+      toast.success('File deleted');
+      setFiles(prev => prev.filter(f => f.id !== file.id)); // remove from UI instantly
+    } catch {
+      toast.error('Failed to delete file');
+    } finally {
+      setDeleting(null);
+    }
   };
 
   const formatDt = (dt) => {
@@ -213,6 +227,22 @@ const FileListModal = ({ employee, onClose, isMobile }) => {
                       }}
                     >
                       {viewing === file.id ? <><Spinner size={12} color="#2196F3" /> Viewing…</> : '👁 View'}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(file)}
+                      disabled={deleting === file.id}
+                      style={{
+                        flex: isMobile ? 1 : 'none',
+                        background: deleting === file.id ? '#FFEBEE' : 'linear-gradient(135deg, #EF5350, #C62828)',
+                        color: deleting === file.id ? '#C62828' : '#fff',
+                        border: 'none', borderRadius: '8px',
+                        padding: '8px 16px', fontSize: '12px', fontWeight: '600',
+                        cursor: deleting === file.id ? 'not-allowed' : 'pointer',
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                        minHeight: '36px', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {deleting === file.id ? <><Spinner size={12} color="#C62828" /> Deleting…</> : '🗑 Delete'}
                     </button>
 
                     {/* Download */}

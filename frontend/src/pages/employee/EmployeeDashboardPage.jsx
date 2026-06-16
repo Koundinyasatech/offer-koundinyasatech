@@ -254,7 +254,7 @@ export default function EmployeeDashboardPage() {
                       {/* File name */}
                       <td style={td}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <span style={{ fontSize: '20px', flexShrink: 0 }}>📄</span>
+                          {/* <span style={{ fontSize: '20px', flexShrink: 0 }}></span> */}
                           <span style={{ fontWeight: '500', color: '#1A1A2E', wordBreak: 'break-word' }}>
                             {file.ActualfileName || file.FileName || '—'}
                           </span>

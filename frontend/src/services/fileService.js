@@ -1,5 +1,5 @@
 import apiClient from './apiService'
-import { API_ENDPOINTS } from '../constants/api'
+import { API_ENDPOINTS, BASE_URL } from '../constants/api'
 
 export const fileService = {
 
@@ -11,9 +11,7 @@ export const fileService = {
 
   /* Get all files list by empId — uses new list endpoint */
   getFilesList: (empId) =>
-    apiClient
-      .get(`/api/viewpdf/list/${empId}`)
-      .then((r) => r.data),
+    apiClient.get(`/viewpdf/list/${empId}`).then((r) => r.data),
 
   /* Upload file */
   upload: (empId, file) => {
@@ -27,32 +25,24 @@ export const fileService = {
       .then((r) => r.data)
   },
 
-  /* View a specific file by MongoDB _id — opens in new tab */
-  viewPdf: async (fileId) => {
-    const res = await apiClient.get(`/api/viewpdf/${fileId}`, {
-      responseType: 'blob',
-    })
-    const blob    = new Blob([res.data], { type: 'application/pdf' })
-    const blobUrl = window.URL.createObjectURL(blob)
-    const tab     = window.open(blobUrl, '_blank')
-    if (!tab) {
-      const a = document.createElement('a')
-      a.href = blobUrl; a.target = '_blank'; a.rel = 'noopener noreferrer'
-      document.body.appendChild(a); a.click(); a.remove()
-    }
-    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 10000)
+  /* View a specific file by MongoDB _id — opens directly from backend (shows correct filename) */
+  viewPdf: (fileId) => {
+    window.open(`${BASE_URL}/viewpdf/${fileId}`, '_blank')
   },
 
   /* Download a specific file by MongoDB _id */
   download: async (fileId, fileName) => {
-    const res = await apiClient.get(`/api/files/download/${fileId}`, {
+    const res = await apiClient.get(`/files/download/${fileId}`, {
       responseType: 'blob',
     })
     const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
-    const a   = document.createElement('a')
-    a.href     = url
+    const a = document.createElement('a')
+    a.href = url
     a.download = fileName || 'document.pdf'
     document.body.appendChild(a); a.click(); a.remove()
     window.URL.revokeObjectURL(url)
   },
+
+  deleteFile: (fileId) =>
+    apiClient.delete(`/files/delete/${fileId}`).then((r) => r.data),
 }

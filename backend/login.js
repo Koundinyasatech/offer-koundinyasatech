@@ -5,11 +5,11 @@ const multer = require("multer");
 const fs = require("fs");
 require("dotenv").config();
 
-const EmployeeData  = require("./models/EmployeeData");
-const Users         = require("./models/Users");
+const EmployeeData = require("./models/EmployeeData");
+const Users = require("./models/Users");
 const EmployeeFiles = require("./models/EmployeeFiles");
-const path          = require("path");
-const Designation   = require("./models/Designation");
+const path = require("path");
+const Designation = require("./models/Designation");
 
 const app = express();
 
@@ -48,7 +48,7 @@ mongoose
 /* ── File storage ── */
 const storage = multer.diskStorage({
   destination: function (req, file, cb) { cb(null, "uploads/"); },
-  filename:    function (req, file, cb) { cb(null, Date.now() + "-" + file.originalname); },
+  filename: function (req, file, cb) { cb(null, Date.now() + "-" + file.originalname); },
 });
 const upload = multer({ storage });
 
@@ -106,18 +106,18 @@ app.post("/api/auth/login", async (req, res) => {
     }
 
     const userPayload = {
-      Userid:      user.Userid      || user.Employeeid,
-      Employeeid:  user.Employeeid  || user.Userid,
-      name:        user.name        || user.Employeename || user.UserName || "",
+      Userid: user.Userid || user.Employeeid,
+      Employeeid: user.Employeeid || user.Userid,
+      name: user.name || user.Employeename || user.UserName || "",
       role,
       designation: user.designation || user.Designation || "",
-      IsActive:    user.IsActive ?? false,
+      IsActive: user.IsActive ?? false,
     };
 
     res.status(200).json({
       message: "Login Successful",
-      token:   `${role}-${userPayload.Userid}`,
-      user:    userPayload,
+      token: `${role}-${userPayload.Userid}`,
+      user: userPayload,
     });
   } catch (error) {
     console.log(error);
@@ -168,15 +168,15 @@ app.get("/api/employees", async (req, res) => {
     });
 
     const mapped = data.map((emp) => ({
-      empId:       emp.Employeeid,
-      name:        emp.Employeename,
+      empId: emp.Employeeid,
+      name: emp.Employeename,
       designation: emp.Designation,
-      code:        emp.code,
-      mobile:      emp.Mobileno,
-      email:       emp.Email,
-      DOJ:         emp.DOJ,
-      DOE:         emp.DOE,
-      status:      emp.IsActive ? "Active" : "Inactive",
+      code: emp.code,
+      mobile: emp.Mobileno,
+      email: emp.Email,
+      DOJ: emp.DOJ,
+      DOE: emp.DOE,
+      status: emp.IsActive ? "Active" : "Inactive",
     }));
 
     res.json(mapped);
@@ -206,12 +206,12 @@ app.get("/api/employees/GetFiles", async (req, res) => {
     const data = await EmployeeFiles.find({ Empid });
 
     const mapped = data.map((emp) => ({
-      Id:              emp.Id,
-      Empid:           emp.Empid,
-      ActualfileName:  emp.ActualfileName,
-      FileName:        emp.FileName,
+      Id: emp.Id,
+      Empid: emp.Empid,
+      ActualfileName: emp.ActualfileName,
+      FileName: emp.FileName,
       CreatedDatetime: emp.CreatedDatetime,
-      Islatest:        emp.Islatest,
+      Islatest: emp.Islatest,
     }));
 
     res.json(mapped);
@@ -238,17 +238,17 @@ app.post("/api/employees/add", async (req, res) => {
     }
 
     const employee = new EmployeeData({
-      Employeeid:      Number(empId),
-      Employeename:    name,
-      Designation:     designation,
-      Mobileno:        mobile,
-      Email:           email,
-      code:            code,
-      DOJ:             DOJ,
-      DOE:             DOE,
-      Createduserid:   200000,
+      Employeeid: Number(empId),
+      Employeename: name,
+      Designation: designation,
+      Mobileno: mobile,
+      Email: email,
+      code: code,
+      DOJ: DOJ,
+      DOE: DOE,
+      Createduserid: 200000,
       Createddatetime: new Date().toISOString(),
-      IsActive:        isActive !== false,
+      IsActive: isActive !== false,
     });
 
     await employee.save();
@@ -270,13 +270,13 @@ app.put("/api/employees/update/:id", async (req, res) => {
       {
         $set: {
           Employeename: name,
-          Designation:  designation,
-          Mobileno:     mobile,
-          Email:        email,
-          code:         code,
-          IsActive:     isActive,
-          DOJ:          DOJ,
-          DOE:          DOE,
+          Designation: designation,
+          Mobileno: mobile,
+          Email: email,
+          code: code,
+          IsActive: isActive,
+          DOJ: DOJ,
+          DOE: DOE,
         },
       },
       { new: true }
@@ -296,15 +296,15 @@ app.get("/api/employees/:id", async (req, res) => {
     if (!emp) return res.status(404).json({ message: "Employee not found" });
 
     res.json({
-      empId:       emp.Employeeid,
-      name:        emp.Employeename,
+      empId: emp.Employeeid,
+      name: emp.Employeename,
       designation: emp.Designation,
-      DOJ:         emp.DOJ,
-      DOE:         emp.DOE,
-      code:        emp.code,
-      mobile:      emp.Mobileno,
-      email:       emp.Email,
-      status:      emp.IsActive ? "Active" : "Inactive",
+      DOJ: emp.DOJ,
+      DOE: emp.DOE,
+      code: emp.code,
+      mobile: emp.Mobileno,
+      email: emp.Email,
+      status: emp.IsActive ? "Active" : "Inactive",
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -323,7 +323,7 @@ app.post("/api/files/upload", upload.single("file"), async (req, res) => {
     Date.now() + "_" + Math.round(Math.random() * 1000000) + path.extname(req.file.originalname);
 
   try {
-    const pdfPath  = req.file.path;
+    const pdfPath = req.file.path;
     const pdfBytes = fs.readFileSync(pdfPath);
 
     // ✅ Mark all previous files as not latest
@@ -334,15 +334,15 @@ app.post("/api/files/upload", upload.single("file"), async (req, res) => {
 
     // ✅ Always insert new record — never replace
     const employeeFile = new EmployeeFiles({
-      Empid:           req.body.employeeId,
-      ActualfileName:  req.file.originalname,
-      FileName:        generatedfilename,
-      filepath:        req.file.path,
-      ContentType:     req.file.mimetype,
-      Data:            pdfBytes,
-      CreatedUserId:   req.Userid,
+      Empid: req.body.employeeId,
+      ActualfileName: req.file.originalname,
+      FileName: generatedfilename,
+      filepath: req.file.path,
+      ContentType: req.file.mimetype,
+      Data: pdfBytes,
+      CreatedUserId: req.Userid,
       CreatedDatetime: new Date(),
-      Islatest:        true,   // ← new file is always the latest
+      Islatest: true,   // ← new file is always the latest
     });
 
     await employeeFile.save();
@@ -368,12 +368,12 @@ app.get("/api/viewpdf/list/:id", async (req, res) => {
     if (!files.length) return res.status(404).json({ message: "No files found" });
 
     const mapped = files.map(f => ({
-      id:            f._id,
+      id: f._id,
       ActualfileName: f.ActualfileName,
-      FileName:      f.FileName,
-      ContentType:   f.ContentType,
+      FileName: f.FileName,
+      ContentType: f.ContentType,
       CreatedDatetime: f.CreatedDatetime,
-      Islatest:      f.Islatest,
+      Islatest: f.Islatest,
     }));
 
     res.json(mapped);
@@ -438,7 +438,7 @@ app.get("/api/files/download/:id", async (req, res) => {
     if (!file) return res.status(404).json({ message: "File not found" });
 
     res.set({
-      "Content-Type":        file.ContentType,
+      "Content-Type": file.ContentType,
       "Content-Disposition": `attachment; filename="${file.ActualfileName || file.FileName}"`,
     });
 
@@ -447,6 +447,33 @@ app.get("/api/files/download/:id", async (req, res) => {
       : file.Data;
 
     res.end(data);
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.delete("/api/files/delete/:id", async (req, res) => {
+  try {
+    const isMongoId = req.params.id.match(/^[a-f\d]{24}$/i);
+    if (!isMongoId) return res.status(400).json({ message: "Invalid file ID" });
+
+    const deleted = await EmployeeFiles.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ message: "File not found" });
+
+    // If deleted file was latest, mark the next most recent as latest
+    if (deleted.Islatest) {
+      const next = await EmployeeFiles.findOne(
+        { Empid: deleted.Empid },
+        null,
+        { sort: { CreatedDatetime: -1 } }
+      );
+      if (next) {
+        await EmployeeFiles.findByIdAndUpdate(next._id, { $set: { Islatest: true } });
+      }
+    }
+
+    res.json({ message: "File deleted successfully" });
   } catch (err) {
     console.log(err);
     res.status(500).json({ message: err.message });
