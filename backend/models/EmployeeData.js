@@ -11,6 +11,7 @@ const EmployeeSchema = new mongoose.Schema({
     code: String,
     DOJ: String,
     DOE: String,
+    Branch: String,
     Createduserid: Number,
     Createddatetime: String,
     IsActive: Boolean
