@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useEmployees } from '../../hooks/useEmployees';
 import { fileService } from '../../services/fileService';
 import AppButton from '../../components/common/AppButton';
+import LogoutAllButton from '../../components/common/LogoutAllButton';
 import EmployeeTable from '../../components/tables/EmployeeTable';
 import { useWindowWidth } from '../../hooks/useWindowWidth';
 
@@ -419,9 +420,12 @@ export default function AdminDashboardPage() {
               + Add New Employee
             </AppButton>
           </div>
-          <AppButton variant="outline" onClick={handleLogout} style={{ width: isMobile ? '100%' : 'auto', alignSelf: isMobile ? 'stretch' : 'flex-start' }}>
-            Logout
-          </AppButton>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px', alignSelf: isMobile ? 'stretch' : 'flex-start' }}>
+            <LogoutAllButton style={{ width: isMobile ? '100%' : 'auto' }} />
+            <AppButton variant="outline" onClick={handleLogout} style={{ width: isMobile ? '100%' : 'auto', alignSelf: isMobile ? 'stretch' : 'flex-start' }}>
+              Logout
+            </AppButton>
+          </div>
         </div>
 
         {/* ── Upload Form Card ── */}

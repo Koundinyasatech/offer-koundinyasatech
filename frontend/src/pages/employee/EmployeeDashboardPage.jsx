@@ -648,6 +648,7 @@ import { toast } from 'react-toastify';
 import { useAuth } from '../../context/AuthContext';
 import { fileService } from '../../services/fileService';
 import AppButton from '../../components/common/AppButton';
+import LogoutAllButton from '../../components/common/LogoutAllButton';
 import ktsLogo from '../../assets/images/kts1.png';
 import { useWindowWidth } from '../../hooks/useWindowWidth';
 
@@ -826,9 +827,12 @@ export default function EmployeeDashboardPage() {
               </p>
             )}
           </div>
-          <AppButton variant="outline" onClick={handleLogout} style={{ width: isMobile ? '100%' : 'auto', minHeight: '44px' }}>
-            Logout
-          </AppButton>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px' }}>
+            <LogoutAllButton style={{ width: isMobile ? '100%' : 'auto', minHeight: '44px' }} />
+            <AppButton variant="outline" onClick={handleLogout} style={{ width: isMobile ? '100%' : 'auto', minHeight: '44px' }}>
+              Logout
+            </AppButton>
+          </div>
         </div>
 
         {/* ── Files Card ── */}

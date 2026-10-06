@@ -4,7 +4,10 @@ export const BASE_URL = 'https://offer-koundinyasatech-1.onrender.com/api'
 
 export const API_ENDPOINTS = {
   // Auth
-  LOGIN: '/auth/login',
+  LOGIN:      '/auth/login',
+  LOGOUT:     '/auth/logout',
+  LOGOUT_ALL: '/auth/logout-all',
+  ME:         '/auth/me',
 
   // Employees
   GET_ALL_EMPLOYEES:  '/employees',
