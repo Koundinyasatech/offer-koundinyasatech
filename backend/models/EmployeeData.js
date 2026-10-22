@@ -12,6 +12,8 @@ const EmployeeSchema = new mongoose.Schema({
     DOJ: String,
     DOE: String,
     Branch: String,
+    CTC: { type: Number, default: null },
+    tokenVersion: { type: Number, default: 0 },
     Createduserid: Number,
     Createddatetime: String,
     IsActive: Boolean

@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
+const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 require("dotenv").config();
 
@@ -11,7 +12,6 @@ const Users = require("./models/Users");
 const EmployeeFiles = require("./models/EmployeeFiles");
 const path = require("path");
 const Designation = require("./models/Designation");
-const UserSessions = require("./models/UserSessions");
 
 const app = express();
 
@@ -31,11 +31,20 @@ app.use(
       }
     },
     methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   })
 );
 
 app.use(express.json());
+
+/* ── JWT config ── */
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+if (!JWT_SECRET) {
+  console.error("❌ JWT_SECRET is missing in .env — server cannot start");
+  process.exit(1);
+}
 
 mongoose
   .connect(process.env.MONGO_URI)
@@ -64,59 +73,90 @@ const generateCode = () => {
   return code;
 };
 
-/* ═══════════════════════════════════════════════════════════
-   SESSIONS — one per logged-in device (needed for "logout from all devices")
-═══════════════════════════════════════════════════════════ */
-const SESSION_TTL_DAYS = Number(process.env.SESSION_TTL_DAYS) || 7;   // idle time before a device is logged out
-const SESSION_TTL_MS = SESSION_TTL_DAYS * 24 * 60 * 60 * 1000;
-const SESSION_REFRESH_MS = 5 * 60 * 1000;                             // extend an active session at most every 5 min
+/* ── Shape of the user object sent to the client (login + /auth/me) ── */
+const buildUserPayload = (user, role) => ({
+  Userid: user.Userid || user.Employeeid,
+  Employeeid: user.Employeeid || user.Userid,
+  name: user.name || user.Employeename || user.UserName || "",
+  role,
+  designation: user.designation || user.Designation || "",
+  branch: user.branch || user.Branch || "",
+  IsActive: user.IsActive ?? false,
+});
 
-const hashToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
-
-/* ── Create a session for a device and return its random token ── */
-const createSession = async (userId, role, req) => {
-  const token = crypto.randomBytes(32).toString("hex");
-  await UserSessions.create({
-    tokenHash: hashToken(token),
-    userId: String(userId),
-    role,
-    userAgent: String(req.get("user-agent") || "").slice(0, 300),
-    expiresAt: new Date(Date.now() + SESSION_TTL_MS),
-  });
-  return token;
+/* ── CTC parser: optional field. Empty → null, otherwise a non-negative number ── */
+const parseCtc = (value) => {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return { ok: true, value: null };
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return { ok: false };
+  return { ok: true, value: n };
 };
 
-/* ── Auth middleware — rejects tokens that were logged out or have expired ── */
-const requireAuth = async (req, res, next) => {
+/* ═══════════════════════════════════════════════════════════
+   AUTH MIDDLEWARE
+   Token carries { sub, role, tv }. "tv" is the account's
+   tokenVersion at login time. Logout-all bumps tokenVersion in
+   the DB, so every older token fails the check below.
+═══════════════════════════════════════════════════════════ */
+const authenticate = async (req, res, next) => {
   try {
-    const header = req.get("authorization") || "";
-    const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-    if (!token) return res.status(401).json({ message: "Please log in" });
+    const header = req.headers.authorization || "";
+    const [scheme, token] = header.split(" ");
 
-    const session = await UserSessions.findOne({
-      tokenHash: hashToken(token),
-      expiresAt: { $gt: new Date() },
-    });
-    if (!session) {
-      return res.status(401).json({ message: "Your session has ended. Please log in again." });
+    if (scheme !== "Bearer" || !token) {
+      return res.status(401).json({ message: "Authentication required", code: "NO_TOKEN" });
     }
 
-    req.auth = { sessionId: session._id, userId: session.userId, role: session.role };
-
-    // Sliding expiry: keep devices that are in use logged in
-    if (Date.now() - (session.lastSeenAt?.getTime() || 0) > SESSION_REFRESH_MS) {
-      UserSessions.updateOne(
-        { _id: session._id },
-        { $set: { lastSeenAt: new Date(), expiresAt: new Date(Date.now() + SESSION_TTL_MS) } }
-      ).catch((err) => console.log("Session refresh failed:", err.message));
+    let payload;
+    try {
+      payload = jwt.verify(token, JWT_SECRET);
+    } catch {
+      return res.status(401).json({ message: "Invalid or expired token", code: "INVALID_TOKEN" });
     }
 
+    const account =
+      payload.role === "admin"
+        ? await Users.findOne({ Userid: payload.sub })
+        : await EmployeeData.findOne({ Employeeid: payload.sub });
+
+    if (!account) {
+      return res.status(401).json({ message: "Account not found", code: "INVALID_TOKEN" });
+    }
+
+    if ((account.tokenVersion || 0) !== payload.tv) {
+      return res.status(401).json({
+        message: "Session expired. Please log in again.",
+        code: "SESSION_REVOKED",
+      });
+    }
+
+    if (payload.role === "employee" && account.IsActive !== true) {
+      return res.status(403).json({ message: "Account is inactive", code: "INACTIVE" });
+    }
+
+    req.auth = { userId: payload.sub, role: payload.role };
+    req.account = account;
     next();
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: err.message });
+    console.log("Auth middleware error:", err);
+    res.status(500).json({ message: "Authentication failed" });
   }
 };
+
+const requireAdmin = (req, res, next) => {
+  if (req.auth?.role !== "admin") {
+    return res.status(403).json({ message: "Admin access required" });
+  }
+  next();
+};
+
+/* Protect every /api route except login */
+app.use("/api", (req, res, next) => {
+  if (req.path === "/auth/login") return next();
+  return authenticate(req, res, next);
+});
 
 /* ═══════════════════════════════════════════════════════════
    HEALTH CHECK
@@ -159,19 +199,14 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(401).json({ message: "Invalid code" });
     }
 
-    // ✅ Include branch in user payload
-    const userPayload = {
-      Userid: user.Userid || user.Employeeid,
-      Employeeid: user.Employeeid || user.Userid,
-      name: user.name || user.Employeename || user.UserName || "",
-      role,
-      designation: user.designation || user.Designation || "",
-      branch: user.branch || user.Branch || "",  // ✅ NEW — Return branch
-      IsActive: user.IsActive ?? false,
-    };
+    const userPayload = buildUserPayload(user, role);
 
-    // ✅ Random per-device token, stored as a session (old token `${role}-${Userid}` could not be revoked)
-    const token = await createSession(userPayload.Userid, role, req);
+    // ✅ Signed token bound to the account's current tokenVersion
+    const token = jwt.sign(
+      { sub: String(userPayload.Userid), role, tv: user.tokenVersion || 0 },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
 
     res.status(200).json({
       message: "Login Successful",
@@ -184,38 +219,44 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-/* ── Logout — this device only ── */
-app.post("/api/auth/logout", requireAuth, async (req, res) => {
+/* ── Logout from ALL devices (invalidates every token issued so far) ── */
+app.post("/api/auth/logout-all", async (req, res) => {
   try {
-    await UserSessions.deleteOne({ _id: req.auth.sessionId });
-    res.json({ message: "Logged out" });
+    const { userId, role } = req.auth;
+
+    const result =
+      role === "admin"
+        ? await Users.updateOne({ Userid: userId }, { $inc: { tokenVersion: 1 } })
+        : await EmployeeData.updateOne({ Employeeid: userId }, { $inc: { tokenVersion: 1 } });
+
+    if (!result.matchedCount) {
+      return res.status(404).json({ message: "Account not found" });
+    }
+
+    console.log(`🔒 Logged out all devices for ${role} ${userId}`);
+    res.json({ message: "Logged out from all devices" });
   } catch (err) {
-    console.log(err);
+    console.log("❌ Logout-all error:", err);
     res.status(500).json({ message: err.message });
   }
 });
 
-/* ── Logout from ALL devices (including this one) ── */
-app.post("/api/auth/logout-all", requireAuth, async (req, res) => {
-  try {
-    const result = await UserSessions.deleteMany({ userId: req.auth.userId, role: req.auth.role });
-    console.log(`🔒 Logout all devices | ${req.auth.role} ${req.auth.userId} | sessions removed: ${result.deletedCount}`);
-    res.json({ message: "Logged out from all devices", devicesLoggedOut: result.deletedCount });
-  } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: err.message });
-  }
+/* ── Logout this device ──
+   Tokens are stateless, so the client simply discards its token. (Use
+   logout-all to invalidate every issued token on the server.) */
+app.post("/api/auth/logout", (req, res) => {
+  res.json({ message: "Logged out" });
 });
 
-/* ── Session check — frontend calls this to find out if it was logged out from another device ── */
-app.get("/api/auth/me", requireAuth, (req, res) => {
-  res.json({ userId: req.auth.userId, role: req.auth.role });
+/* ── Current session check — authenticate() already rejects revoked tokens with 401 ── */
+app.get("/api/auth/me", (req, res) => {
+  res.json({ user: buildUserPayload(req.account, req.auth.role) });
 });
 
 /* ═══════════════════════════════════════════════════════════
    DESIGNATION
 ═══════════════════════════════════════════════════════════ */
-app.get("/api/Designation", requireAuth, async (req, res) => {
+app.get("/api/Designation", async (req, res) => {
   try {
     console.log("Designation API Called");
     const data = await Designation.find({});
@@ -229,7 +270,7 @@ app.get("/api/Designation", requireAuth, async (req, res) => {
 /* ═══════════════════════════════════════════════════════════
    USERS
 ═══════════════════════════════════════════════════════════ */
-app.get("/api/users", requireAuth, async (req, res) => {
+app.get("/api/users", requireAdmin, async (req, res) => {
   try {
     console.log("Users API Called");
     const data = await Users.find({});
@@ -245,14 +286,13 @@ app.get("/api/users", requireAuth, async (req, res) => {
 ═══════════════════════════════════════════════════════════ */
 
 /* ── GET all employees ── */
-app.get("/api/employees", requireAuth, async (req, res) => {
+app.get("/api/employees", requireAdmin, async (req, res) => {
   try {
     console.log("📋 Employees API Called");
     const data = await EmployeeData.find({
       Employeeid: { $exists: true, $ne: null, $ne: "" },
     });
 
-    // ✅ Map response to include branch
     const mapped = data.map((emp) => ({
       empId: emp.Employeeid,
       name: emp.Employeename,
@@ -260,7 +300,7 @@ app.get("/api/employees", requireAuth, async (req, res) => {
       code: emp.code,
       mobile: emp.Mobileno,
       email: emp.Email,
-      branch: emp.Branch || "",  // ✅ NEW — Include branch
+      branch: emp.Branch || "",
       DOJ: emp.DOJ,
       DOE: emp.DOE,
       status: emp.IsActive ? "Active" : "Inactive",
@@ -273,7 +313,7 @@ app.get("/api/employees", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/api/employees/generate-code", requireAuth, async (req, res) => {
+app.get("/api/employees/generate-code", requireAdmin, async (req, res) => {
   try {
     const generatedCode = generateCode();
     res.status(200).json({ success: true, code: generatedCode });
@@ -283,8 +323,66 @@ app.get("/api/employees/generate-code", requireAuth, async (req, res) => {
   }
 });
 
+/* ── CTC visibility: protected by a separate CTC password (CTC_PASSWORD in .env) ──
+   CTC is never included in the normal employee responses; it is only
+   returned here after the password is verified server-side. */
+const CTC_PASSWORD = process.env.CTC_PASSWORD;
+if (!CTC_PASSWORD) {
+  console.warn("⚠️  CTC_PASSWORD is not set in .env — CTC cannot be unlocked until it is");
+}
+const sha256 = (v) => crypto.createHash("sha256").update(String(v)).digest();
+const ctcPasswordMatches = (input) =>
+  Boolean(CTC_PASSWORD) && crypto.timingSafeEqual(sha256(input), sha256(CTC_PASSWORD));
+
+const ctcAttempts = new Map(); // userId -> { count, lockedUntil }
+const CTC_MAX_ATTEMPTS = 5;
+const CTC_LOCK_MS = 5 * 60 * 1000;
+
+app.post("/api/employees/ctc", requireAdmin, async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!CTC_PASSWORD) {
+      return res.status(503).json({ message: "CTC password is not configured on the server" });
+    }
+    if (!password) return res.status(400).json({ message: "Password is required" });
+
+    const key = String(req.auth.userId);
+    const state = ctcAttempts.get(key) || { count: 0, lockedUntil: 0 };
+
+    if (state.lockedUntil > Date.now()) {
+      const mins = Math.ceil((state.lockedUntil - Date.now()) / 60000);
+      return res.status(429).json({ message: `Too many attempts. Try again in ${mins} min.` });
+    }
+
+    if (!ctcPasswordMatches(password)) {
+      state.count += 1;
+      if (state.count >= CTC_MAX_ATTEMPTS) {
+        state.count = 0;
+        state.lockedUntil = Date.now() + CTC_LOCK_MS;
+      }
+      ctcAttempts.set(key, state);
+      // 403 (not 401) so a wrong password never looks like an expired session
+      return res.status(403).json({ message: "Incorrect password", code: "WRONG_PASSWORD" });
+    }
+
+    ctcAttempts.delete(key);
+
+    const rows = await EmployeeData.find(
+      { Employeeid: { $exists: true, $ne: null } },
+      { Employeeid: 1, CTC: 1 }
+    );
+    const ctc = {};
+    rows.forEach((r) => { ctc[r.Employeeid] = r.CTC ?? null; });
+
+    res.json({ ctc });
+  } catch (err) {
+    console.log("❌ CTC unlock error:", err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 /* ── Get files by employee — MUST be before /:id ── */
-app.get("/api/employees/GetFiles", requireAuth, async (req, res) => {
+app.get("/api/employees/GetFiles", async (req, res) => {
   try {
     const { Empid } = req.query;
     if (!Empid) return res.status(400).json({ message: "Empid is required" });
@@ -307,26 +405,29 @@ app.get("/api/employees/GetFiles", requireAuth, async (req, res) => {
 });
 
 /* ── Add employee ── */
-app.post("/api/employees/add", requireAuth, async (req, res) => {
+app.post("/api/employees/add", requireAdmin, async (req, res) => {
   try {
-    // ✅ Accept branch from request body
-    const { empId, name, designation, mobile, email, DOJ, DOE, code, branch, isActive } = req.body;
+    const { empId, name, designation, mobile, email, DOJ, DOE, code, branch, ctc, isActive } = req.body;
 
     console.log("📝 Adding Employee | Branch:", branch);
 
-    // ✅ Include branch in validation
     if (!empId || !name || !designation || !mobile || !email || !DOJ || !DOE || !code || !branch) {
-      return res.status(400).json({ 
-        message: "All fields are required (including branch)" 
+      return res.status(400).json({
+        message: "All fields are required (including branch)"
       });
     }
 
-    // ✅ Validate branch values
     const validBranches = ["Hyderabad", "Bangalore"];
     if (!validBranches.includes(branch)) {
-      return res.status(400).json({ 
-        message: `Branch must be either "Hyderabad" or "Bangalore"` 
+      return res.status(400).json({
+        message: `Branch must be either "Hyderabad" or "Bangalore"`
       });
+    }
+
+    // CTC is optional — validate only when provided
+    const ctcResult = parseCtc(ctc);
+    if (!ctcResult.ok) {
+      return res.status(400).json({ message: "CTC must be a non-negative number" });
     }
 
     const existing = await EmployeeData.findOne({ Employeeid: Number(empId) });
@@ -341,7 +442,8 @@ app.post("/api/employees/add", requireAuth, async (req, res) => {
       Mobileno: mobile,
       Email: email,
       code: code,
-      Branch: branch,  // ✅ NEW — Save branch to database
+      Branch: branch,
+      CTC: ctcResult.value,
       DOJ: DOJ,
       DOE: DOE,
       Createduserid: 200000,
@@ -359,24 +461,27 @@ app.post("/api/employees/add", requireAuth, async (req, res) => {
 });
 
 /* ── Update employee ── */
-app.put("/api/employees/update/:id", requireAuth, async (req, res) => {
+app.put("/api/employees/update/:id", requireAdmin, async (req, res) => {
   try {
-    // ✅ Accept branch from request body
-    const { name, designation, mobile, email, code, branch, isActive, DOJ, DOE, status } = req.body;
+    const { name, designation, mobile, email, code, branch, ctc, isActive, DOJ, DOE, status } = req.body;
 
     console.log("✏️ Updating Employee | Branch:", branch);
 
-    // ✅ Validate branch if provided
     if (branch) {
       const validBranches = ["Hyderabad", "Bangalore"];
       if (!validBranches.includes(branch)) {
-        return res.status(400).json({ 
-          message: `Branch must be either "Hyderabad" or "Bangalore"` 
+        return res.status(400).json({
+          message: `Branch must be either "Hyderabad" or "Bangalore"`
         });
       }
     }
 
-    // ✅ Build update object with branch
+    // CTC is optional — validate only when the client sends it
+    const ctcResult = parseCtc(ctc);
+    if (ctc !== undefined && !ctcResult.ok) {
+      return res.status(400).json({ message: "CTC must be a non-negative number" });
+    }
+
     const updateData = {
       Employeename: name,
       Designation: designation,
@@ -388,9 +493,12 @@ app.put("/api/employees/update/:id", requireAuth, async (req, res) => {
       DOE: DOE,
     };
 
-    // ✅ Include branch if provided
     if (branch) {
       updateData.Branch = branch;
+    }
+
+    if (ctc !== undefined) {
+      updateData.CTC = ctcResult.value;
     }
 
     const updated = await EmployeeData.findOneAndUpdate(
@@ -409,12 +517,16 @@ app.put("/api/employees/update/:id", requireAuth, async (req, res) => {
 });
 
 /* ── Get single employee by ID ── */
-app.get("/api/employees/:id", requireAuth, async (req, res) => {
+app.get("/api/employees/:id", async (req, res) => {
   try {
+    // Employees may only read their own record
+    if (req.auth.role !== "admin" && String(req.auth.userId) !== String(req.params.id)) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
     const emp = await EmployeeData.findOne({ Employeeid: Number(req.params.id) });
     if (!emp) return res.status(404).json({ message: "Employee not found" });
 
-    // ✅ Return branch in response
     res.json({
       empId: emp.Employeeid,
       name: emp.Employeename,
@@ -424,7 +536,7 @@ app.get("/api/employees/:id", requireAuth, async (req, res) => {
       code: emp.code,
       mobile: emp.Mobileno,
       email: emp.Email,
-      branch: emp.Branch || "",  // ✅ NEW — Include branch
+      branch: emp.Branch || "",
       status: emp.IsActive ? "Active" : "Inactive",
     });
   } catch (err) {
@@ -436,7 +548,7 @@ app.get("/api/employees/:id", requireAuth, async (req, res) => {
    FILES
 ═══════════════════════════════════════════════════════════ */
 
-app.post("/api/files/upload", requireAuth, upload.single("file"), async (req, res) => {
+app.post("/api/files/upload", requireAdmin, upload.single("file"), async (req, res) => {
   console.log("Upload file API called.");
   const generatedfilename =
     Date.now() + "_" + Math.round(Math.random() * 1000000) + path.extname(req.file.originalname);
@@ -459,7 +571,7 @@ app.post("/api/files/upload", requireAuth, upload.single("file"), async (req, re
       filepath: req.file.path,
       ContentType: req.file.mimetype,
       Data: pdfBytes,
-      CreatedUserId: req.Userid,
+      CreatedUserId: req.auth.userId,
       CreatedDatetime: new Date(),
       Islatest: true,
     });
@@ -475,7 +587,7 @@ app.post("/api/files/upload", requireAuth, upload.single("file"), async (req, re
   }
 });
 
-app.get("/api/viewpdf/list/:id", requireAuth, async (req, res) => {
+app.get("/api/viewpdf/list/:id", async (req, res) => {
   try {
     const files = await EmployeeFiles.find(
       { Empid: req.params.id },
@@ -500,7 +612,6 @@ app.get("/api/viewpdf/list/:id", requireAuth, async (req, res) => {
   }
 });
 
-// ⚠️ Still public: the View button opens this URL in a new browser tab (window.open), which cannot send the token
 app.get("/api/viewpdf/:id", async (req, res) => {
   try {
     let file;
@@ -531,7 +642,7 @@ app.get("/api/viewpdf/:id", async (req, res) => {
   }
 });
 
-app.get("/api/files/download/:id", requireAuth, async (req, res) => {
+app.get("/api/files/download/:id", async (req, res) => {
   try {
     let file;
 
@@ -563,7 +674,7 @@ app.get("/api/files/download/:id", requireAuth, async (req, res) => {
   }
 });
 
-app.delete("/api/files/delete/:id", requireAuth, async (req, res) => {
+app.delete("/api/files/delete/:id", requireAdmin, async (req, res) => {
   try {
     const isMongoId = req.params.id.match(/^[a-f\d]{24}$/i);
     if (!isMongoId) return res.status(400).json({ message: "Invalid file ID" });

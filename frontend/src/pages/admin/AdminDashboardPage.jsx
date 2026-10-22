@@ -4,8 +4,8 @@ import { toast } from 'react-toastify';
 import { useAuth } from '../../context/AuthContext';
 import { useEmployees } from '../../hooks/useEmployees';
 import { fileService } from '../../services/fileService';
+import { authService } from '../../services/authService';
 import AppButton from '../../components/common/AppButton';
-import LogoutAllButton from '../../components/common/LogoutAllButton';
 import EmployeeTable from '../../components/tables/EmployeeTable';
 import { useWindowWidth } from '../../hooks/useWindowWidth';
 
@@ -319,6 +319,9 @@ export default function AdminDashboardPage() {
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [showFileModal, setShowFileModal] = useState(false);
 
+  /* Logout-all state */
+  const [loggingOutAll, setLoggingOutAll] = useState(false);
+
   useEffect(() => { fetchEmployees(); }, [fetchEmployees]);
 
   const handleEmpSelect = (id) => {
@@ -345,6 +348,23 @@ export default function AdminDashboardPage() {
   };
 
   const handleLogout = () => { logout(); navigate('/login', { replace: true }); };
+
+  /* Logout from every device (this one included) */
+  const handleLogoutAll = async () => {
+    if (!window.confirm('Log out from all devices? You will be signed out everywhere, including this device.')) return;
+    setLoggingOutAll(true);
+    try {
+      await authService.logoutAll();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to log out from all devices');
+      setLoggingOutAll(false);
+      return;
+    }
+    toast.success('Logged out from all devices');
+    logout();
+    navigate('/login', { replace: true });
+  };
+
   const handleEdit = (emp) => navigate(`/admin/employee/edit/${emp.empId}`, { state: { employee: emp } });
 
   /* Open file modal */
@@ -420,9 +440,17 @@ export default function AdminDashboardPage() {
               + Add New Employee
             </AppButton>
           </div>
-          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px', alignSelf: isMobile ? 'stretch' : 'flex-start' }}>
-            <LogoutAllButton style={{ width: isMobile ? '100%' : 'auto' }} />
-            <AppButton variant="outline" onClick={handleLogout} style={{ width: isMobile ? '100%' : 'auto', alignSelf: isMobile ? 'stretch' : 'flex-start' }}>
+          <div style={{
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: '10px',
+            alignSelf: isMobile ? 'stretch' : 'flex-start',
+          }}>
+            <AppButton variant="outline" onClick={handleLogoutAll} loading={loggingOutAll} disabled={loggingOutAll}
+              style={{ width: isMobile ? '100%' : 'auto', whiteSpace: 'nowrap' }}>
+              Logout from all devices
+            </AppButton>
+            <AppButton variant="outline" onClick={handleLogout} style={{ width: isMobile ? '100%' : 'auto' }}>
               Logout
             </AppButton>
           </div>
